@@ -1,12 +1,11 @@
 package com.cf.springbootbackendapirest.controllers;
 
 import com.cf.springbootbackendapirest.models.entities.Cliente;
+import com.cf.springbootbackendapirest.models.entities.Region;
 import com.cf.springbootbackendapirest.models.services.ClienteService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.cf.springbootbackendapirest.models.services.UploadFileService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -18,16 +17,11 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.validation.Valid;
-import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 
@@ -37,11 +31,12 @@ import java.util.stream.Collectors;
 public class ClienteRestController {
 
     private final ClienteService clienteService;
-    private final Logger log = LoggerFactory.getLogger(ClienteRestController.class);
+    private final UploadFileService uploadFileService;
 
     @Autowired
-    public ClienteRestController(ClienteService clienteService) {
+    public ClienteRestController(ClienteService clienteService, UploadFileService uploadFileService) {
         this.clienteService = clienteService;
+        this.uploadFileService = uploadFileService;
     }
 
     @GetMapping()
@@ -103,7 +98,6 @@ public class ClienteRestController {
     }
 
     @PutMapping("/{id}")
-
     public ResponseEntity<?> updateCliente(@Valid @RequestBody Cliente cliente, @PathVariable Integer id, BindingResult result) {
         Map<String, Object> response = new HashMap<>();
         Cliente clienteUpdate;
@@ -133,6 +127,7 @@ public class ClienteRestController {
         }
         clienteUpdate.setNombre(cliente.getNombre());
         clienteUpdate.setApellido(cliente.getApellido());
+        clienteUpdate.setRegion(cliente.getRegion());
 
         Cliente save;
         try{
@@ -167,13 +162,7 @@ public class ClienteRestController {
 
         try {
             String nombreFotoAnterior = clienteDelete.getFoto();
-            if (nombreFotoAnterior != null && nombreFotoAnterior.length() > 0){
-                Path rutaFotoAnterior = Paths.get("uploads").resolve(nombreFotoAnterior).toAbsolutePath();
-                File archivoFotoAnterior = rutaFotoAnterior.toFile();
-                if (archivoFotoAnterior.exists() && archivoFotoAnterior.canRead()){
-                    archivoFotoAnterior.delete();
-                }
-            }
+            uploadFileService.eliminar(nombreFotoAnterior);
             clienteService.delete(id);
         }catch (DataAccessException e) {
             response.put("message", "Error al intentar eliminar");
@@ -203,27 +192,17 @@ public class ClienteRestController {
         }
 
         if(!archivo.isEmpty()){
-            String nameFile = UUID.randomUUID() + "_" + archivo.getOriginalFilename().replace(" ", "");
-            Path rutaArchivo = Paths.get("uploads").resolve(nameFile).toAbsolutePath();
-            log.info(rutaArchivo.toString());
-
+            String nameFile;
             try {
-                Files.copy(archivo.getInputStream(), rutaArchivo);
+                nameFile = uploadFileService.copiar(archivo);
             } catch (IOException e) {
-                response.put("message", "Error al subir la imagen del cliente: " + nameFile);
+                response.put("message", "Error al subir la imagen del cliente");
                 response.put("error", e.getCause().getMessage());
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
             }
 
             String nombreFotoAnterior = clienteFound.getFoto();
-
-            if (nombreFotoAnterior != null && nombreFotoAnterior.length() > 0){
-                Path rutaFotoAnterior = Paths.get("uploads").resolve(nombreFotoAnterior).toAbsolutePath();
-                File archivoFotoAnterior = rutaFotoAnterior.toFile();
-                if (archivoFotoAnterior.exists() && archivoFotoAnterior.canRead()){
-                    archivoFotoAnterior.delete();
-                }
-            }
+            uploadFileService.eliminar(nombreFotoAnterior);
 
             clienteFound.setFoto(nameFile);
             clienteService.save(clienteFound);
@@ -238,21 +217,27 @@ public class ClienteRestController {
 
     @GetMapping("/uploads/img/{nameFile:.+}")
     public ResponseEntity<Resource> showImg(@PathVariable String nameFile){
-        Path rutaArchivo = Paths.get("uploads").resolve(nameFile).toAbsolutePath();
-        log.info(rutaArchivo.toString());
         Resource recurso = null;
 
-        try {
-            recurso = new UrlResource(rutaArchivo.toUri());
-        } catch (MalformedURLException e) {
+        try{
+            recurso = uploadFileService.cargar(nameFile);
+        }catch (MalformedURLException e) {
             e.printStackTrace();
         }
-
-        if (!recurso.exists() && !recurso.isReadable())
-            throw new RuntimeException("Error no se pudo cargar la imagen: " + nameFile);
 
         HttpHeaders cabecera = new HttpHeaders();
         cabecera.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\""+ recurso.getFilename() + "\"");
         return new ResponseEntity<>(recurso, cabecera, HttpStatus.OK);
+    }
+
+    @GetMapping("/regiones")
+    public ResponseEntity<?> getRegiones(){
+        Map<String, Object> response = new HashMap<>();
+        List<Region> regions = clienteService.findAllRegiones();
+        if (regions.isEmpty()){
+            response.put("message", "regions not found");
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+        }
+        return ResponseEntity.ok(regions);
     }
 }

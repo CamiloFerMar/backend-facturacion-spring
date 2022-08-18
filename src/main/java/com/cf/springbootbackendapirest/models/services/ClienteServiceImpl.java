@@ -1,5 +1,6 @@
 package com.cf.springbootbackendapirest.models.services;
 
+import com.cf.springbootbackendapirest.models.entities.Region;
 import com.cf.springbootbackendapirest.models.respositories.ClienteDAO;
 import com.cf.springbootbackendapirest.models.entities.Cliente;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +31,12 @@ public class ClienteServiceImpl implements ClienteService{
     @Transactional(readOnly = true)
     public Page<Cliente> findAll(Pageable pageable) {
         return clienteDAO.findAll(pageable);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Region> findAllRegiones(){
+        return clienteDAO.findAllRegiones();
     }
 
     @Override
